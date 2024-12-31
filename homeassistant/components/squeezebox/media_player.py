@@ -605,13 +605,7 @@ class SqueezeBoxMediaPlayerEntity(
 
     async def async_add_alarm(self, **kwargs: Any) -> None:
         """Add an alarm to the player."""
-        try:
-            # Make sure the parameters are valid
-            alarm = Alarm(**kwargs)
-            if alarm["time"] is None:
-                raise ServiceValidationError("Time must be provided")
-        except (TypeError, ValueError) as err:
-            raise ServiceValidationError from err
+        alarm = Alarm(**kwargs)
         time = alarm.pop("time")
         await self._player.async_add_alarm(time, alarm)
         await self.coordinator.async_refresh()
