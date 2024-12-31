@@ -5,12 +5,17 @@ from collections.abc import Callable
 from datetime import timedelta
 import logging
 import re
+from typing import Any
 
 from pysqueezebox import Player, Server
 from pysqueezebox.player import Alarm
 
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import format_mac
+from homeassistant.helpers.device_registry import (
+    CONNECTION_NETWORK_MAC,
+    DeviceInfo,
+    format_mac,
+)
 from homeassistant.helpers.dispatcher import (
     async_dispatcher_connect,
     async_dispatcher_send,
@@ -19,6 +24,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    DOMAIN,
     PLAYER_UPDATE_INTERVAL,
     SENSOR_UPDATE_INTERVAL,
     SIGNAL_ALARM_DISCOVERED,
@@ -82,7 +88,7 @@ class LMSStatusDataUpdateCoordinator(DataUpdateCoordinator):
         return data
 
 
-class SqueezeBoxPlayerUpdateCoordinator(DataUpdateCoordinator):
+class SqueezeBoxPlayerUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator for Squeezebox players."""
 
     def __init__(self, hass: HomeAssistant, player: Player, server_uuid: str) -> None:
@@ -101,8 +107,27 @@ class SqueezeBoxPlayerUpdateCoordinator(DataUpdateCoordinator):
         self.player_uuid = format_mac(player.player_id)
         self.server_uuid = server_uuid
 
-    async def _async_update_data(self) -> dict:
-        """Update the Player() object."""
+        _manufacturer = None
+        if player.model == "SqueezeLite" or "SqueezePlay" in player.model:
+            _manufacturer = "Ralph Irving"
+        elif (
+            "Squeezebox" in player.model
+            or "Transporter" in player.model
+            or "Slim" in player.model
+        ):
+            _manufacturer = "Logitech"
+
+        self.device_info = DeviceInfo(
+            identifiers={(DOMAIN, self.player_uuid)},
+            name=player.name,
+            connections={(CONNECTION_NETWORK_MAC, self.player_uuid)},
+            via_device=(DOMAIN, self.server_uuid),
+            model=player.model,
+            manufacturer=_manufacturer,
+        )
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        """Update the Player() object if available, or listen for rediscovery if not."""
         if self.available:
             # Only update players available at last update, unavailable players are rediscovered instead
             await self.player.async_update()

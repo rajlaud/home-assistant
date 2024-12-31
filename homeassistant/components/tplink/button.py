@@ -9,6 +9,7 @@ from kasa import Feature
 
 from homeassistant.components.button import (
     DOMAIN as BUTTON_DOMAIN,
+    ButtonDeviceClass,
     ButtonEntity,
     ButtonEntityDescription,
 )
@@ -44,6 +45,26 @@ BUTTON_DESCRIPTIONS: Final = [
             new_platform=SIREN_DOMAIN,
             breaks_in_ha_version="2025.4.0",
         ),
+    ),
+    TPLinkButtonEntityDescription(
+        key="reboot",
+        device_class=ButtonDeviceClass.RESTART,
+    ),
+    TPLinkButtonEntityDescription(
+        key="pan_left",
+        available_fn=lambda dev: dev.is_on,
+    ),
+    TPLinkButtonEntityDescription(
+        key="pan_right",
+        available_fn=lambda dev: dev.is_on,
+    ),
+    TPLinkButtonEntityDescription(
+        key="tilt_up",
+        available_fn=lambda dev: dev.is_on,
+    ),
+    TPLinkButtonEntityDescription(
+        key="tilt_down",
+        available_fn=lambda dev: dev.is_on,
     ),
 ]
 
@@ -83,5 +104,6 @@ class TPLinkButtonEntity(CoordinatedTPLinkFeatureEntity, ButtonEntity):
         """Execute action."""
         await self._feature.set_value(True)
 
-    def _async_update_attrs(self) -> None:
+    def _async_update_attrs(self) -> bool:
         """No need to update anything."""
+        return self.entity_description.available_fn(self._device)

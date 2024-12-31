@@ -35,7 +35,6 @@ from homeassistant.helpers import (
     entity_platform,
     entity_registry as er,
 )
-from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.start import async_at_start
@@ -58,6 +57,7 @@ from .const import (
     DISCOVERY_TASK,
     DOMAIN,
     KNOWN_PLAYERS,
+    KNOWN_SERVERS,
     SIGNAL_PLAYER_DISCOVERED,
     SQUEEZEBOX_SOURCE_STRINGS,
 )
@@ -75,7 +75,6 @@ ATTR_QUERY_RESULT = "query_result"
 _LOGGER = logging.getLogger(__name__)
 
 
-KNOWN_SERVERS = "known_servers"
 ATTR_PARAMETERS = "parameters"
 ATTR_OTHER_PLAYER = "other_player"
 
@@ -199,7 +198,6 @@ class SqueezeBoxMediaPlayerEntity(
     _attr_has_entity_name = True
     _attr_name = None
     _last_update: datetime | None = None
-    _attr_available = True
 
     def __init__(
         self,
@@ -213,24 +211,7 @@ class SqueezeBoxMediaPlayerEntity(
         self._remove_dispatcher: Callable | None = None
         self._previous_media_position = 0
         self._attr_unique_id = coordinator.player_uuid
-        _manufacturer = None
-        if player.model == "SqueezeLite" or "SqueezePlay" in player.model:
-            _manufacturer = "Ralph Irving"
-        elif (
-            "Squeezebox" in player.model
-            or "Transporter" in player.model
-            or "Slim" in player.model
-        ):
-            _manufacturer = "Logitech"
-
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, self._attr_unique_id)},
-            name=player.name,
-            connections={(CONNECTION_NETWORK_MAC, self._attr_unique_id)},
-            via_device=(DOMAIN, coordinator.server_uuid),
-            model=player.model,
-            manufacturer=_manufacturer,
-        )
+        self._attr_device_info = coordinator.device_info
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -238,13 +219,12 @@ class SqueezeBoxMediaPlayerEntity(
         if self._previous_media_position != self.media_position:
             self._previous_media_position = self.media_position
             self._last_update = utcnow()
-        self._attr_available = self.coordinator.available
         self.async_write_ha_state()
 
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
-        return self._attr_available and super().available
+        return self.coordinator.available and super().available
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -269,7 +249,9 @@ class SqueezeBoxMediaPlayerEntity(
 
     async def async_will_remove_from_hass(self) -> None:
         """Remove from list of known players when removed from hass."""
-        self.hass.data[DOMAIN][KNOWN_PLAYERS].remove(self.coordinator)
+        known_servers = self.hass.data[DOMAIN][KNOWN_SERVERS]
+        known_players = known_servers[self.coordinator.server_uuid][KNOWN_PLAYERS]
+        known_players.remove(self.coordinator.player.player_id)
 
     @property
     def volume_level(self) -> float | None:
@@ -551,6 +533,7 @@ class SqueezeBoxMediaPlayerEntity(
             all_params.extend(parameters)
         self._query_result = await self._player.async_query(*all_params)
         _LOGGER.debug("call_query got result %s", self._query_result)
+        self.async_write_ha_state()
 
     async def async_join_players(self, group_members: list[str]) -> None:
         """Add other Squeezebox players to this player's sync group.

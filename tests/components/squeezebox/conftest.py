@@ -13,7 +13,7 @@ from homeassistant.components.squeezebox.browse_media import (
 from homeassistant.components.squeezebox.const import (
     CONF_HTTPS,
     DOMAIN,
-    KNOWN_PLAYERS,
+    SIGNAL_PLAYER_DISCOVERED,
     STATUS_QUERY_LIBRARYNAME,
     STATUS_QUERY_MAC,
     STATUS_QUERY_UUID,
@@ -28,9 +28,13 @@ from homeassistant.components.squeezebox.const import (
     STATUS_SENSOR_PLAYER_COUNT,
     STATUS_SENSOR_RESCAN,
 )
+from homeassistant.components.squeezebox.coordinator import (
+    SqueezeBoxPlayerUpdateCoordinator,
+)
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import format_mac
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from tests.common import MockConfigEntry
 
@@ -122,6 +126,7 @@ async def mock_async_browse(
     """Mock the async_browse method of pysqueezebox.Player."""
     child_types = {
         "favorites": "favorites",
+        "new music": "album",
         "albums": "album",
         "album": "track",
         "genres": "genre",
@@ -224,6 +229,7 @@ def mock_pysqueezebox_player(uuid: str) -> MagicMock:
         mock_player.title = None
         mock_player.image_url = None
         mock_player.model = "SqueezeLite"
+        mock_player.alarms_enabled = True
 
         return mock_player
 
@@ -284,9 +290,21 @@ async def configure_squeezebox_switch_platform(
         ),
         patch("homeassistant.components.squeezebox.Server", return_value=lms),
     ):
+        # Find the coordinator for the player to manually refresh it.
+        # This is necessary because we are not configuring the media_player platform.
+        coordinator: SqueezeBoxPlayerUpdateCoordinator | None = None
+
+        def discovery_callback(player: SqueezeBoxPlayerUpdateCoordinator):
+            """Find the coordinator for the discovered player so we can manually refresh it."""
+            nonlocal coordinator
+            coordinator = player
+
+        async_dispatcher_connect(hass, SIGNAL_PLAYER_DISCOVERED, discovery_callback)
+
+        # Set up the switch platform and refresh the player coordinator.
         await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done(wait_background_tasks=True)
-        await hass.data[DOMAIN][KNOWN_PLAYERS][0].async_refresh()
+        await coordinator.async_refresh()
 
 
 @pytest.fixture
@@ -302,7 +320,7 @@ async def mock_alarms_player(
             "id": TEST_ALARM_ID,
             "enabled": True,
             "time": "07:00",
-            "dow": [1, 2, 3, 4, 5],
+            "dow": [0, 1, 2, 3, 4, 5, 6],
             "repeat": False,
             "url": "CURRENT_PLAYLIST",
             "volume": 50,
