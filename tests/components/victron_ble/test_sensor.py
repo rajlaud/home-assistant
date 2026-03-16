@@ -4,6 +4,7 @@ from home_assistant_bluetooth import BluetoothServiceInfo
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
+from homeassistant.components.victron_ble.sensor import error_to_state
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
@@ -59,3 +60,37 @@ async def test_sensors(
 
     # Use snapshot testing to verify all entity states and registry entries
     await snapshot_platform(hass, entity_registry, snapshot, entry.entry_id)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("no_error", "no_error"),
+        ("voltage_high", "voltage_high"),
+        ("internal_supply_a", "internal_supply"),
+        ("internal_supply_d", "internal_supply"),
+        ("inverter_shutdown_41", "inverter_shutdown_pv_isolation"),
+        ("inverter_shutdown_43", "inverter_shutdown_ground_fault"),
+        ("pv_input_shutdown_80", "pv_input_shutdown"),
+        ("network_a", "network"),
+        ("unknown_value", None),
+        (42, None),
+        (None, None),
+    ],
+    ids=[
+        "no_error",
+        "direct_match",
+        "variant_suffix_a",
+        "variant_suffix_d",
+        "shutdown_pv_isolation",
+        "shutdown_ground_fault",
+        "pv_input_shutdown",
+        "network_variant",
+        "unknown_string",
+        "numeric_value",
+        "none_value",
+    ],
+)
+def test_error_to_state(value: float | str | None, expected: str | None) -> None:
+    """Test error_to_state converts charger error codes correctly."""
+    assert error_to_state(value) == expected
